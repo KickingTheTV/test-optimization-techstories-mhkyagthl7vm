@@ -63,10 +63,18 @@ jobs:
         run: npm ci
       - name: Prepare Database
         run: npm run db-prep
+      # make sure your indentation matches up with the rest of the file
+      - name: Configure Datadog Test Optimization
+        uses: datadog/test-visibility-github-action@v2
+        with:
+          languages: js
+          api_key: ${{ secrets.DD_API_KEY }}
+          site: datadoghq.com
       - name: Run All Tests
         id: run_tests
         run: npm run test:ci
         env:
+          NODE_OPTIONS: -r ${{env.DD_TRACE_PACKAGE}}
           NODE_ENV: test
           NEXTAUTH_URL: ${{ env.NEXTAUTH_URL }}
           DATABASE_URL: ${{ env.DATABASE_URL }}

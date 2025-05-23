@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    # run on open, and on every push
+    types: [opened, synchronize]
+  push:
+  workflow_dispatch:
+
+env:
+  DATABASE_URL: postgres://user:password@localhost:5432/db?schema=techstories
+  NEXTAUTH_URL: http://localhost:3000
+  POSTGRES_PASSWORD: password
+  POSTGRES_USER: user
+  POSTGRES_DB: db
+  DD_API_KEY: ${{ secrets.DD_API_KEY }}
+  DD_INSIDE_CI: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build only the custom service with caching
+      - name: Build and cache quotes_api
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/quotes_api
+          push: false
+          load: true
+          tags: quotes_api:latest
+          cache-from: type=gha,scope=quotes-api
+          cache-to: type=gha,scope=quotes-api,mode=max
+
+      # Pull pre-built images (this is fast)
+      - name: Pull external images
+        run: docker compose pull dd-agent db
+
+      # Start all services
+      - name: Start Services
+        run: docker compose up -d
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+      # Cache node_modules directory
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        id: cache-node-modules
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
+            ${{ runner.os }}-node-
+      - name: Install Dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+      - name: Prepare Database
+        run: npm run db-prep
+      - name: Run All Tests
+        id: run_tests
+        run: npm run test:ci
+        env:
+          NODE_ENV: test
+          NEXTAUTH_URL: ${{ env.NEXTAUTH_URL }}
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+      - name: Stop Services
+        if: always()
+        run: docker compose down

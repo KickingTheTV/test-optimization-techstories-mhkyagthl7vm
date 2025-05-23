@@ -16,6 +16,7 @@ env:
   POSTGRES_DB: db
   DD_API_KEY: ${{ secrets.DD_API_KEY }}
   DD_INSIDE_CI: true
+  DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
 
 jobs:
   test:
@@ -58,6 +59,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-modules-
             ${{ runner.os }}-node-
+      - name: Install datadog-ci
+        run: npm install -g @datadog/datadog-ci
       - name: Install Dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
@@ -78,6 +81,10 @@ jobs:
           NODE_ENV: test
           NEXTAUTH_URL: ${{ env.NEXTAUTH_URL }}
           DATABASE_URL: ${{ env.DATABASE_URL }}
+      - name: Run Quality Gate
+      # run it even if tests fail
+        if: always()
+        run: datadog-ci gate evaluate
       - name: Stop Services
         if: always()
         run: docker compose down
